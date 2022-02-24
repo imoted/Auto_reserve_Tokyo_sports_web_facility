@@ -129,16 +129,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='set time and reserve date.')
     parser.add_argument('-fr', type=int, help='予約したい開始時間帯　ここから')
     parser.add_argument('-to', type=int, help='予約したい開始時間帯　ここまで')
-    parser.add_argument('-date', type=str, help='予約したい日付　yyyymmdd')
+    parser.add_argument('-date', type=str, nargs='+', help='予約したい日付　yyyymmdd 複数指定可能')
     parser.add_argument('-inter', type=int, default=120, help='webを見に行くInterval秒数')
 
     args = parser.parse_args()
     from_time = args.fr
     to_time = args.to
-    reserve_date = args.date
+    reserve_date_list = args.date
     interval = args.inter
 
-    if not from_time or not to_time or not reserve_date:
+    if not from_time or not to_time or not reserve_date_list:
         print("Please set the argument.")
         sys.exit()
 
@@ -146,6 +146,7 @@ if __name__ == '__main__':
         Linetoken = os.environ["LINE_TOKEN"]
         ID = os.environ["ReserveWebID"]
         passwd = os.environ["ReserveWebPass"]
+
     except KeyError:
         print("Please set the environment variable.")
         sys.exit()
@@ -158,17 +159,18 @@ if __name__ == '__main__':
     timeslot_index_list2 = resevation_.get_timeslot_index_list(from_time, to_time, time_slot_list2)
     resevation_.login(ID, passwd)
 
-    # 種目から探す
-    resevation_.click_button('#purposeSearch > img')
-    resevation_.select_tennis_court()
-    resevation_.click_button('#srchBtn')
-
-    if resevation_.click_specified_calendar_day(reserve_date):
-        print("Not available datetime")
-        resevation_.close_driver()
-        exit()
-
+    date_index = 0
     while 1:
+        # 種目から探す
+        resevation_.click_button('#purposeSearch > img')
+        resevation_.select_tennis_court()
+        resevation_.click_button('#srchBtn')
+
+        reserve_date = reserve_date_list[date_index]
+        reserve_date_format = "{}年{}月{}日".format(reserve_date[0:4], reserve_date[4:6], reserve_date[6:8])
+        if resevation_.click_specified_calendar_day(reserve_date):
+            print("{} is not available datetime".format(reserve_date_format))
+            del reserve_date_list[date_index]
         is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(timeslot_index_list,
                                                                                               court_list)
         if not is_clicked:
@@ -187,15 +189,27 @@ if __name__ == '__main__':
         if is_clicked:
             resevation_.click_button('#doReserve')
             resevation_.click_button('#apply')
-            reserve_date = "{}年{}月{}日".format(reserve_date[0:4], reserve_date[4:6], reserve_date[6:8])
-            message = "{}で{} {}時から予約できました".format(court_name, reserve_date, str(time_slot_list[timeslot_index]))
+            message = "{}で{} {}時から予約できました".format(court_name, reserve_date_format, str(time_slot_list[timeslot_index]))
             r = requests.post(url, headers=headers, params={'message': message}, )
             print(message)
+
+            resevation_.click_button(
+                '#childForm > table > tbody > tr > td:nth-child(2) > div > table:nth-child(3) > tbody > tr:nth-child(2) > td > div > table > tbody > tr > td > input[type=button]')
+
+            is_clicked = False
+            del reserve_date_list[date_index]
+        else:
+            resevation_.click_button('#goBtn > img')
+
+        if not reserve_date_list:
             resevation_.close_driver()
             exit()
 
+        date_index += 1
+        if date_index >= len(reserve_date_list):
+            date_index = 0
+
         time.sleep(interval)
-        resevation_.refresh_page()
 
 ##################################################
 # 場所から探す -> 場所によってテニスだけではないので、個別対応になり、難しい。 -> テニスというワードで検索すればよかったか?
