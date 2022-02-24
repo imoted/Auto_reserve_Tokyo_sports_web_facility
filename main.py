@@ -9,6 +9,8 @@ import lxml.html
 import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import NoSuchElementException
+
 
 court_list = ["芝公園", "日比谷公園", "木場公園", "猿江恩賜公園"]
 court_list2 = ['大井ふ頭海浜公園Ａ']
@@ -26,7 +28,7 @@ class Reservation:
         options.add_argument('--proxy-server="direct://"')
         options.add_argument('--proxy-bypass-list=*')
         # options.add_argument('--start-maximized')
-        options.add_argument('--headless')
+        # options.add_argument('--headless')
 
         DRIVER_PATH = '/usr/local/bin/chromedriver'
         self.driver = webdriver.Chrome(executable_path=DRIVER_PATH, chrome_options=options)
@@ -63,9 +65,6 @@ class Reservation:
         element = self.driver.find_elements_by_css_selector("#checked")
         element[2].click()  # テニスハード
         element[3].click()  # テニス人工芝
-
-    def goto_next_place_select_page(self):
-        self.click_button('#goNextPager')
 
     def get_park_button_list(self, court_list):
         html = self.driver.page_source
@@ -161,55 +160,59 @@ if __name__ == '__main__':
 
     date_index = 0
     while 1:
-        # 種目から探す
-        resevation_.click_button('#purposeSearch > img')
-        resevation_.select_tennis_court()
-        resevation_.click_button('#srchBtn')
+        try:
+            # 種目から探す
+            resevation_.click_button('#purposeSearch > img')
+            resevation_.select_tennis_court()
+            resevation_.click_button('#srchBtn')
 
-        reserve_date = reserve_date_list[date_index]
-        reserve_date_format = "{}年{}月{}日".format(reserve_date[0:4], reserve_date[4:6], reserve_date[6:8])
-        if resevation_.click_specified_calendar_day(reserve_date):
-            print("{} is not available datetime".format(reserve_date_format))
-            del reserve_date_list[date_index]
-        is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(timeslot_index_list,
-                                                                                              court_list)
-        if not is_clicked:
-            for _ in range(5):
-                resevation_.goto_next_place_select_page()
+            reserve_date = reserve_date_list[date_index]
+            reserve_date_format = "{}年{}月{}日".format(reserve_date[0:4], reserve_date[4:6], reserve_date[6:8])
+            if resevation_.click_specified_calendar_day(reserve_date):
+                print("{} is not available datetime".format(reserve_date_format))
+                del reserve_date_list[date_index]
             is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(timeslot_index_list,
-                                                                                                  court_list2)
+                                                                                                  court_list)
             if not is_clicked:
-                is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(
-                    timeslot_index_list2,
-                    court_list3)
-            if not is_clicked:
-                for _ in range(5):
-                    resevation_.click_button("#goPrevPager")
+                resevation_.driver.find_elements_by_css_selector('#pageDisp')[5].click()
+                is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(timeslot_index_list,
+                                                                                                      court_list2)
+                if not is_clicked:
+                    is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(
+                        timeslot_index_list2,
+                        court_list3)
 
-        if is_clicked:
-            resevation_.click_button('#doReserve')
-            resevation_.click_button('#apply')
-            message = "{}で{} {}時から予約できました".format(court_name, reserve_date_format, str(time_slot_list[timeslot_index]))
+            if is_clicked:
+                resevation_.click_button('#doReserve')
+                resevation_.click_button('#apply')
+                message = "{}で{} {}時から予約できました".format(court_name, reserve_date_format, str(time_slot_list[timeslot_index]))
+                r = requests.post(url, headers=headers, params={'message': message}, )
+                print(message)
+
+                resevation_.click_button(
+                    '#childForm > table > tbody > tr > td:nth-child(2) > div > table:nth-child(3) > tbody > tr:nth-child(2) > td > div > table > tbody > tr > td > input[type=button]')
+
+                is_clicked = False
+                del reserve_date_list[date_index]
+            else:
+                resevation_.click_button('#goBtn > img')
+
+            if not reserve_date_list:
+                resevation_.close_driver()
+                exit()
+
+            date_index += 1
+            if date_index >= len(reserve_date_list):
+                date_index = 0
+
+            time.sleep(interval)
+        except NoSuchElementException:
+            message = "Errorでプログラムがストップしました"
             r = requests.post(url, headers=headers, params={'message': message}, )
             print(message)
-
-            resevation_.click_button(
-                '#childForm > table > tbody > tr > td:nth-child(2) > div > table:nth-child(3) > tbody > tr:nth-child(2) > td > div > table > tbody > tr > td > input[type=button]')
-
-            is_clicked = False
-            del reserve_date_list[date_index]
-        else:
-            resevation_.click_button('#goBtn > img')
-
-        if not reserve_date_list:
             resevation_.close_driver()
             exit()
 
-        date_index += 1
-        if date_index >= len(reserve_date_list):
-            date_index = 0
-
-        time.sleep(interval)
 
 ##################################################
 # 場所から探す -> 場所によってテニスだけではないので、個別対応になり、難しい。 -> テニスというワードで検索すればよかったか?
