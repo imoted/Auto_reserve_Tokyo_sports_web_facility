@@ -127,10 +127,10 @@ class Reservation:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='set time and reserve date.')
-    parser.add_argument('-fr', type=int, help='from')
-    parser.add_argument('-to', type=int, help='to')
-    parser.add_argument('-date', type=str, help='date')
-    parser.add_argument('-inter', type=int, default=120, help='date')
+    parser.add_argument('-fr', type=int, help='予約したい開始時間帯　ここから')
+    parser.add_argument('-to', type=int, help='予約したい開始時間帯　ここまで')
+    parser.add_argument('-date', type=str, help='予約したい日付　yyyymmdd')
+    parser.add_argument('-inter', type=int, default=120, help='webを見に行くInterval秒数')
 
     args = parser.parse_args()
     from_time = args.fr
