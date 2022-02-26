@@ -210,7 +210,8 @@ if __name__ == '__main__':
             time.sleep(interval)
         # except NoSuchElementException:
         except Exception as e:
-            message = "{} プログラムがストップしました".format(e)
+            dt_now = datetime.datetime.now()
+            message = "{} / {} プログラムがストップしました".format(dt_now, e)
             r = requests.post(url, headers=headers, params={'message': message}, )
             print(message)
             resevation_.close_driver()
