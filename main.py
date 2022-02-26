@@ -11,13 +11,20 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException
 
-
 court_list = ["芝公園", "日比谷公園", "木場公園", "猿江恩賜公園"]
 court_list2 = ['大井ふ頭海浜公園Ａ']
 court_list3 = ["有明テニスの森公園イン"]
 
 time_slot_list = [9, 11, 13, 15, 17, 19]
 time_slot_list2 = [7, 9, 11, 13, 15, 17, 19]
+
+try:
+    Linetoken = os.environ["LINE_TOKEN"]
+    ID = os.environ["ReserveWebID"]
+    passwd = os.environ["ReserveWebPass"]
+except KeyError:
+    print("Please set the environment variable.")
+    sys.exit()
 
 
 class Reservation:
@@ -28,7 +35,7 @@ class Reservation:
         options.add_argument('--proxy-server="direct://"')
         options.add_argument('--proxy-bypass-list=*')
         # options.add_argument('--start-maximized')
-        # options.add_argument('--headless')
+        options.add_argument('--headless')
 
         DRIVER_PATH = '/usr/local/bin/chromedriver'
         self.driver = webdriver.Chrome(executable_path=DRIVER_PATH, chrome_options=options)
@@ -61,10 +68,12 @@ class Reservation:
                 return 0
         return 1
 
-    def select_tennis_court(self):
-        element = self.driver.find_elements_by_css_selector("#checked")
-        element[2].click()  # テニスハード
-        element[3].click()  # テニス人工芝
+    def select_tennis_court(self, i):
+        if i == 0:
+            self.driver.find_elements_by_css_selector("#checked")[3].click()  # 人工芝コート
+        else:
+            self.driver.find_elements_by_css_selector("#checked")[2].click()  # ハードコート
+            self.driver.find_elements_by_css_selector("#checked")[3].click()  # 人工芝コート
 
     def get_park_button_list(self, court_list):
         html = self.driver.page_source
@@ -78,7 +87,7 @@ class Reservation:
         return button_index_list
 
     def login(self, ID, passwd):
-        self.click_button('#login')
+        # self.click_button('#login')
         self.input_text("#userid", ID)
         self.input_text("#passwd", passwd)
         time.sleep(3)  # 秒
@@ -96,10 +105,10 @@ class Reservation:
             xpath = "/html/body/div/form[2]/table/tbody/tr/td[2]/div/table[1]/tbody/tr[2]/td/div/div/table[" + \
                     str(i + 1) + "]/tbody/tr[4]/td[" + str(timeslot_index + 1) + "]/div/div/img"
             element_of_dom = dom.xpath(xpath)
-            # print(element_of_dom[0].attrib["alt"])
             if element_of_dom[0].attrib["alt"] == "空き":
-                element = self.driver.find_element_by_xpath(xpath)
-                element.click()
+                self.click_button('#doReserve')
+                self.login(ID, passwd)
+                self.driver.find_element_by_xpath(xpath).click()
                 return 1, timeslot_index
         return 0, None
 
@@ -129,7 +138,7 @@ if __name__ == '__main__':
     parser.add_argument('-fr', type=int, help='予約したい開始時間帯　ここから')
     parser.add_argument('-to', type=int, help='予約したい開始時間帯　ここまで')
     parser.add_argument('-date', type=str, nargs='+', help='予約したい日付　yyyymmdd 複数指定可能')
-    parser.add_argument('-inter', type=int, default=120, help='webを見に行くInterval秒数')
+    parser.add_argument('-inter', type=int, default=60, help='webを見に行くInterval秒数')
 
     args = parser.parse_args()
     from_time = args.fr
@@ -141,56 +150,49 @@ if __name__ == '__main__':
         print("Please set the argument.")
         sys.exit()
 
-    try:
-        Linetoken = os.environ["LINE_TOKEN"]
-        ID = os.environ["ReserveWebID"]
-        passwd = os.environ["ReserveWebPass"]
-
-    except KeyError:
-        print("Please set the environment variable.")
-        sys.exit()
-
     url = "https://notify-api.line.me/api/notify"
     headers = {'Authorization': 'Bearer ' + Linetoken}
 
     resevation_ = Reservation()
     timeslot_index_list = resevation_.get_timeslot_index_list(from_time, to_time, time_slot_list)
     timeslot_index_list2 = resevation_.get_timeslot_index_list(from_time, to_time, time_slot_list2)
-    resevation_.login(ID, passwd)
 
     date_index = 0
     while 1:
         try:
-            # 種目から探す
-            resevation_.click_button('#purposeSearch > img')
-            resevation_.select_tennis_court()
-            resevation_.click_button('#srchBtn')
-
             reserve_date = reserve_date_list[date_index]
             reserve_date_format = "{}年{}月{}日".format(reserve_date[0:4], reserve_date[4:6], reserve_date[6:8])
+
+            # ここで種目を探す画面遷移が正常に行われない場合あり。時間が開くと画面遷移がうまくいかなくなる模様
+            resevation_.click_button('#purposeSearch')  # 種目から探す
             if resevation_.click_specified_calendar_day(reserve_date):
                 print("{} is not available datetime".format(reserve_date_format))
                 del reserve_date_list[date_index]
-            is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(timeslot_index_list,
-                                                                                                  court_list)
-            if not is_clicked:
-                resevation_.driver.find_elements_by_css_selector('#pageDisp')[5].click()
-                is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(timeslot_index_list,
-                                                                                                      court_list2)
-                if not is_clicked:
+
+            for i in range(2):
+                resevation_.select_tennis_court(i)
+                resevation_.click_button('#srchBtn')  # 上記の内容で検索する
+
+                if i == 0:
                     is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(
-                        timeslot_index_list2,
-                        court_list3)
+                        timeslot_index_list, court_list)  # 芝コート予約検索
+                else:
+                    is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(
+                        timeslot_index_list, court_list2)  # ハードコート予約検索 大井ふ頭海浜公園Ａ用
+                    # is_clicked, court_name, timeslot_index = resevation_.search_vacant_place_and_timeslot(
+                    #     timeslot_index_list2, court_list3)  # 有明テニス森用検索
+                if is_clicked:
+                    break
+                resevation_.driver.back()
 
             if is_clicked:
                 resevation_.click_button('#doReserve')
                 resevation_.click_button('#apply')
-                message = "{}で{} {}時から予約できました".format(court_name, reserve_date_format, str(time_slot_list[timeslot_index]))
+                message = "{}のアカウント : {}で{} {}時から予約できました".format(ID, court_name, reserve_date_format,
+                                                                 str(time_slot_list[timeslot_index]))
                 r = requests.post(url, headers=headers, params={'message': message}, )
                 print(message)
-
-                resevation_.click_button(
-                    '#childForm > table > tbody > tr > td:nth-child(2) > div > table:nth-child(3) > tbody > tr:nth-child(2) > td > div > table > tbody > tr > td > input[type=button]')
+                resevation_.click_button('#doLogout')
 
                 is_clicked = False
                 del reserve_date_list[date_index]
@@ -206,13 +208,13 @@ if __name__ == '__main__':
                 date_index = 0
 
             time.sleep(interval)
-        except NoSuchElementException:
-            message = "Errorでプログラムがストップしました"
+        # except NoSuchElementException:
+        except Exception as e:
+            message = "{} プログラムがストップしました".format(e)
             r = requests.post(url, headers=headers, params={'message': message}, )
             print(message)
             resevation_.close_driver()
             exit()
-
 
 ##################################################
 # 場所から探す -> 場所によってテニスだけではないので、個別対応になり、難しい。 -> テニスというワードで検索すればよかったか?
